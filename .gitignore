@@ -1,0 +1,16 @@
+# Security & Keys
+keys.json
+keys.txt
+*.key
+*.pem
+.env
+
+# Logs & Temp
+*.log
+.dente-ops-shots/
+node_modules/
+__pycache__/
+
+# OS Files
+Thumbs.db
+Desktop.ini
