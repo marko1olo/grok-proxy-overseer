@@ -34,6 +34,13 @@ const readline = require('readline');
 const child_process = require('child_process');
 const { URL } = require('url');
 
+// Force UTF-8 encoding in Windows console
+if (process.platform === 'win32') {
+  try {
+    child_process.execSync('chcp 65001', { stdio: 'ignore' });
+  } catch {}
+}
+
 const PROXY_PORT = 8319;
 const UPSTREAM   = 'https://tunnel.rue.onl';
 
@@ -935,6 +942,16 @@ const server = http.createServer((req, res) => {
 
     executeForward(req, res, body, cleanUrl, sessionId);
   });
+});
+
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n${C.bgRed} EADDRINUSE ${C.reset} ${C.brightYellow}Port ${PROXY_PORT} is already occupied by an active Grok Proxy daemon.${C.reset}`);
+    console.error(`${C.dim}The proxy is already running on http://127.0.0.1:${PROXY_PORT}/v1. Exiting redundant launch.${C.reset}\n`);
+    process.exit(0);
+  } else {
+    log(`${C.bgRed} SERVER ERROR ${C.reset} ${err.message}`);
+  }
 });
 
 server.listen(PROXY_PORT, '127.0.0.1', () => {
