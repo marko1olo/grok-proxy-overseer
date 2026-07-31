@@ -863,7 +863,7 @@ try {
 const server = http.createServer((req, res) => {
   res.on('error', err => log(`⚠ client res error: ${err.message}`));
 
-  // Health check endpoint
+  // Health check & Control endpoints
   if ((req.method === 'HEAD' || req.method === 'GET') && (req.url === '/' || req.url === '')) {
     const health = {
       status: 'ok',
@@ -876,6 +876,34 @@ const server = http.createServer((req, res) => {
     };
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(health));
+    return;
+  }
+
+  // Automated Revive / Wake endpoint for T.A.R.S. Overseer
+  if (req.url.startsWith('/wake') || req.url.startsWith('/revive')) {
+    try {
+      const parsedUrl = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
+      const projectTarget = parsedUrl.searchParams.get('project') || parsedUrl.searchParams.get('target') || 'all';
+      const customDirective = parsedUrl.searchParams.get('text') || `[OVERSEER IMPERATIVE WAKE]: Session revival trigger fired. Resume execution immediately according to the project plan!`;
+      
+      const injections = readInjectionsSafe();
+      injections[projectTarget.toLowerCase()] = customDirective;
+      writeInjectionsSafe(injections);
+
+      log(`${C.brightMagenta}⚡ REVISE/WAKE TRIGGERED for [${projectTarget.toUpperCase()}]: "${customDirective.slice(0, 60)}..."${C.reset}`);
+      
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        action: 'revive_directive_injected',
+        project: projectTarget,
+        directive: customDirective,
+        timestamp: new Date().toISOString()
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status: 'error', error: err.message }));
+    }
     return;
   }
 
