@@ -1,0 +1,38 @@
+&& (req.url === '/' || req.url === '')) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end();
+    return;
+  }
+
+  const chunks = [];
+  req.on('data', c => chunks.push(c));
+  req.on('end', () => {
+    const rawBody = Buffer.concat(chunks);
+    const isMessages = req.url === '/v1/messages' || req.url.startsWith('/v1/messages?');
+    const isChatCompletions = req.url === '/v1/chat/completions' || req.url.startsWith('/v1/chat/completions?');
+    const cleanUrl = req.url.replace(/^\/v1\/messages\?beta=true(&.*)?$/, '/v1/messages');
+
+    // OpenAI /v1/models passthrough to TokenRouter
+    if ((req.method === 'GET') && (req.url === '/v1/models' || req.url.startsWith('/v1/models'))) {
+      const trUrl = new URL('/v1/models', TOKENROUTER_UPSTREAM);
+      const trReq = https.request({
+        hostname: trUrl.hostname, port: 443, path: trUrl.pathname,
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer ' + TOKENROUTER_KEY, 'User-Agent': 'claude-proxy/3.3' },
+        agent: httpsAgent, timeout: CONNECT_TIMEOUT_MS
+      }, trRes => {
+        res.writeHead(trRes.statusCode, trRes.headers);
+        trRes.pipe(res);
+      });
+      trReq.on('error', err => { log('tokenrouter models err: ' + err.message); if (!res.headersSent) res.writeHead(502).end(); });
+      trReq.end();
+      return;
+    }
+
+    // OpenAI /v1/chat/completions routing: TokenRouter for free/known models, agentrouter otherwise
+    if (isChatCompletions && rawBody.length > 0) {
+      let obj;
+      try { obj = JSON.parse(rawBody.toString('utf8')); }
+      catch (e) { log('json parse err (chat): ' + e.message); res.writeHead(400).end('{"error":"bad json"}'); return; }
+
+      const 

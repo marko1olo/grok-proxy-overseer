@@ -1,0 +1,25 @@
+    const wait = netDelay(retryCount);
+      log(`⚠ HTTP ${sc} → retry in ${wait}ms`);
+      setTimeout(() => {
+        if (res.writableEnded || res.destroyed) return;
+        executeForward(req, res, body, cleanUrl, sessionId, retryCount + 1, rateLimitRetry, prunePass, deadKeyAttempts);
+      }, wait);
+      return;
+    }
+
+    // ── 200 OK ───────────────────────────────────────────────────────────────
+    if (sc === 200) {
+      netFailStreak = 0;
+      res.writeHead(sc, upRes.headers);
+      upRes.pipe(res);
+      upRes.on('error', err => log(`⚠ upRes pipe error: ${err.message}`));
+      return;
+    }
+
+    // ── OTHER 4xx / UNEXPECTED ───────────────────────────────────────────────
+    const errParts = [];
+    upRes.on('data', chunk => errParts.push(chunk));
+    upRes.on('end', () => {
+      const buf = Buffer.concat(errParts);
+      const decode = upRes.headers['content-encoding'] === 'gzip'
+        ? (b, cb) => zlib.gunzip(b, (err, r) => cb(err ? b.toString('utf8') : r.toString('u

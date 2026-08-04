@@ -1,5 +1,1 @@
-{
-  "gigahrush": "[OVERSEER IMPERATIVE WAKE]: STOP IDLING (646s)! Write SAVSTAT unit pin in suite_saveload.inl, compile Release, run game_test, and commit to main!",
-  "gigahrush2": "[OVERSEER IMPERATIVE WAKE]: Session revival trigger fired. Resume execution immediately according to the project plan!",
-  "dental-crm": "[OVERSEER IMPERATIVE WAKE]: Session revival trigger fired. Resume execution immediately according to the project plan!"
-}
+{}

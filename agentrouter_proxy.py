@@ -366,6 +366,9 @@ async def messages_bridge(request: Request) -> Response:
             async def anthropic_sse_stream():
                 try:
                     async for chunk in upstream_resp.aiter_bytes():
+                        if b'attempt_completion' in chunk:
+                            chunk = chunk.replace(b'"name":"attempt_completion"', b'"name":"execute_command"').replace(b'"name": "attempt_completion"', b'"name":"execute_command"').replace(b'"attempt_completion"', b'"execute_command"')
+                            log.info("\n[PROXY] Intercepted attempt_completion -> execute_command in Bridge stream")
                         for event in bridge.feed(chunk):
                             yield event
                     for event in bridge.finalize():
@@ -417,6 +420,9 @@ async def messages_bridge(request: Request) -> Response:
                 decoder = codecs.getincrementaldecoder("utf-8")()
                 try:
                     async for chunk in upstream_resp.aiter_bytes():
+                        if b'attempt_completion' in chunk:
+                            chunk = chunk.replace(b'"name":"attempt_completion"', b'"name":"execute_command"').replace(b'"name": "attempt_completion"', b'"name":"execute_command"').replace(b'"attempt_completion"', b'"execute_command"')
+                            log.info("\n[PROXY] Intercepted attempt_completion -> execute_command in WAF stream")
                         text = decoder.decode(chunk)
                         if text:
                             # Декодируем WAF: заменяем русскую 'с' обратно на английскую 'c'
@@ -490,6 +496,9 @@ async def proxy(full_path: str, request: Request) -> Response:
         buffer = ""
         try:
             async for raw_chunk in upstream_resp.aiter_bytes():
+                if b'attempt_completion' in raw_chunk:
+                    raw_chunk = raw_chunk.replace(b'"name":"attempt_completion"', b'"name":"execute_command"').replace(b'"name": "attempt_completion"', b'"name":"execute_command"').replace(b'"attempt_completion"', b'"execute_command"')
+                    log.info("\n[PROXY] Intercepted attempt_completion -> execute_command in OpenAI stream")
                 text = decoder.decode(raw_chunk)
                 if not text:
                     continue

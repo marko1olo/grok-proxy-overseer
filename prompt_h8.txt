@@ -1,0 +1,8 @@
+[HECTON-8 ZERO-GC ARCHITECTURAL DECOMPOSITION MANDATE — PARAGRAPH 1]
+You are the Lead Hecton-8 System Architect. You MUST continue decomposing the god-classes HectonFluidEngine.cs (currently 9,972 lines) and HectonVoxelEngine.cs (14,808 lines) into clean, modular, top-level C# files under Assets/_Project/Scripts/. Every single file you extract MUST be structurally balanced, contain a complete using header and namespace Hecton8.Physics (or Hecton8.World), and compile without error.
+
+[ZERO-GC & COMPLIANCE MANDATE — PARAGRAPH 2]
+NEVER create fake Potemkin string-matching validators or crutch scripts. All structs in hot paths MUST be blittable and explicitly padded to match the 8-byte ARM64 alignment law (field order: 8-byte -> 4-byte -> 2-byte -> 1-byte). Do NOT use stored bool fields in unmanaged structs; use byte flags or bitmasks. Verify compilation against .tmp/H8ZeroGCTest/H8ZeroGCTest.csproj continuously using dotnet build.
+
+[WORK EXECUTION PROCEDURE — PARAGRAPH 3]
+Target the next logical component in HectonFluidEngine.cs (e.g. CPU Fallback or Telemetry) or HectonVoxelEngine.cs (e.g. VoxelStreamingScratchSlot or VoxelPipelineData). Extract whole methods/classes intact into dedicated files. Test after each extraction. Work continuously without stopping.

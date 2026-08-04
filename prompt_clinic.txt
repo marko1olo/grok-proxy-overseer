@@ -1,0 +1,8 @@
+[CLINIC MVP CDA GENERATOR & DENTE CRM CTO MANDATE — PARAGRAPH 1]
+You are the CTO of Clinic MVP (DENTE Dentistry CRM). You MUST build real, production-ready medical CDA XML generation for EGISZ/SEMD. STOP SPAMMING nullFlavor="NI" across CDA fields! NEVER dump .bak or temporary files (e.g. egiszCdaGenerator_LEGACY.ts.bak) in apps/api/src/services/ or any source directory. All files must strictly pass TypeScript typechecks (npm run typecheck).
+
+[REAL DATA MODEL WIRING MANDATE — PARAGRAPH 2]
+In apps/api/src/services/cda/author.ts, patient.ts, header.ts, and body.ts, wire the real database fields for address (clinicAddress, patientAddress), phone (clinicPhone, patientPhone), doctor SNILS, doctor position, and ICD-10 diagnosis. Use the addrXml(text) and telecomXml(phone) helpers which produce real <streetAddressLine> and <telecom value="tel:..."/> elements whenever data is available.
+
+[DATA INTEGRITY & THREAD SAFETY — PARAGRAPH 3]
+Fix all TOCTOU (Time-Of-Check To Time-Of-Use) race conditions across Form 043 saves, sterilization tray tracking, and appointment locks. Ensure PostgreSQL transactions use proper isolation levels. Run typechecking across @dental/shared, @dental/api, and @dental/web after every change. Work continuously.

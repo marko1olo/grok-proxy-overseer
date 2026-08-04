@@ -1,0 +1,30 @@
+catch (e) { log('json parse err (chat): ' + e.message); res.writeHead(400).end('{"error":"bad json"}'); return; }
+
+      const originalModel = (obj.model || '');
+      // Force ALL chat/completions to kimi-k3-free on TokenRouter
+      obj.model = 'moonshotai/kimi-k3-free';
+      if (originalModel !== 'moonshotai/kimi-k3-free') {
+        log('OpenAI model forced: "' + originalModel + '" -> "moonshotai/kimi-k3-free" (TokenRouter)');
+      }
+      const outBody = Buffer.from(JSON.stringify(obj), 'utf8');
+      log('OpenAI req: model=moonshotai/kimi-k3-free stream=' + obj.stream);
+
+      if (true) {
+        // Always route to TokenRouter
+        const trUrl = new URL('/v1/chat/completions', TOKENROUTER_UPSTREAM);
+        const outHeaders = {};
+        for (const [k, v] of Object.entries(req.headers)) {
+          if (k === 'host' || k === 'content-length') continue;
+          outHeaders[k] = v;
+        }
+        outHeaders['host'] = trUrl.hostname;
+        outHeaders['authorization'] = 'Bearer ' + TOKENROUTER_KEY;
+        outHeaders['content-length'] = String(outBody.length);
+        outHeaders['user-agent'] = 'claude-proxy/3.3';
+
+        const trRetry = (attempt) => {
+          const trReq = https.request({
+            hostname: trUrl.hostname, port: 443, path: trUrl.pathname, method: 'POST',
+            headers: outHeaders, agent: httpsAgent, timeout: CONNECT_TIMEOUT_MS
+          }, trRes => {
+            log('TokenRouter HTTP ' + trRes.statusCode + ' (model=' + modelId + ')');

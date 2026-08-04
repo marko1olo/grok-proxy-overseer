@@ -40,7 +40,7 @@ if (process.platform === 'win32') {
   } catch {}
 }
 
-const PROXY_PORT = 8319;
+const PROXY_PORT = 8282;
 const UPSTREAM   = 'https://tunnel.rue.onl';
 
 // ── SAFETY CAPS ──────────────────────────────────────────────────────────────
@@ -148,6 +148,7 @@ function log(...args) {
 const sessionKeyMap      = new Map(); // sessionId -> keyIdx
 const sessionLastSeen    = new Map(); // sessionId -> timestamp (for GC)
 const sessionProjectTag  = new Map(); // sessionId -> {name, root, hits} (auto-detected from body paths)
+const projectKeyMap      = new Map(); // project root -> keyIdx (sticky routing for all subagents)
 let keyLastUsedTime      = new Array(GROK_KEYS.length).fill(0);
 let keyReqCounts         = new Array(GROK_KEYS.length).fill(0);
 let keyWait429Counts     = new Array(GROK_KEYS.length).fill(0);
@@ -217,7 +218,45 @@ function getBestAvailableKeyIdx() {
   return bestIdx;
 }
 
-function getKeyIdxForSession(sessionId) {
+function getKeyIdxForSession(sessionId, bodyBuffer) {
+  let projectInfo = null;
+  if (sessionId && sessionProjectTag.has(sessionId)) {
+    projectInfo = sessionProjectTag.get(sessionId);
+  } else if (bodyBuffer) {
+    projectInfo = detectProjectFromBody(bodyBuffer);
+    if (projectInfo && sessionId) {
+      sessionProjectTag.set(sessionId, projectInfo);
+      log(`${C.brightMagenta}🏷️  [${sessionId.slice(0,8)}...]${C.reset} -> project: ${C.bold}${projectInfo.name}${C.reset} (${projectInfo.root})`);
+    }
+  }
+
+  if (projectInfo && projectInfo.root) {
+    const root = projectInfo.root.toLowerCase();
+    if (projectKeyMap.has(root)) {
+      const pIdx = projectKeyMap.get(root);
+      if (!keyDisabled[pIdx]) {
+        if (sessionId && (!sessionKeyMap.has(sessionId) || sessionKeyMap.get(sessionId) !== pIdx)) {
+          sessionKeyMap.set(sessionId, pIdx);
+          const counts = getSessionCountsPerKey();
+          log(`${C.brightCyan}🔑 Session [${sessionId ? sessionId.slice(0,8) : 'anon'}]${C.reset} bound to ${C.bold}Key #${pIdx + 1}${C.reset} (Project: ${projectInfo.name}) (Load: ${counts.map((cnt,i)=>`K${i+1}:${cnt}`).join(' ')})`);
+        }
+        if (sessionId) sessionLastSeen.set(sessionId, Date.now());
+        keyLastUsedTime[pIdx] = Date.now();
+        return pIdx;
+      }
+    }
+    // New project or its key is disabled
+    const idx = getBestAvailableKeyIdx();
+    projectKeyMap.set(root, idx);
+    if (sessionId) sessionKeyMap.set(sessionId, idx);
+    if (sessionId) sessionLastSeen.set(sessionId, Date.now());
+    keyLastUsedTime[idx] = Date.now();
+    const counts = getSessionCountsPerKey();
+    log(`${C.brightCyan}🏗️ Project [${projectInfo.name}]${C.reset} mapped to ${C.bold}Key #${idx + 1}${C.reset} (Load: ${counts.map((cnt,i)=>`K${i+1}:${cnt}`).join(' ')})`);
+    return idx;
+  }
+
+  // Fallback if no project root detected
   if (!sessionId) {
     const idx = getBestAvailableKeyIdx();
     keyLastUsedTime[idx] = Date.now();
@@ -296,7 +335,13 @@ function getDirectiveHash(text) {
 function detectProjectFromBody(bodyBuffer) {
   try {
     const bodyStr = bodyBuffer.toString('utf8');
-    const pathMatches = bodyStr.match(/[A-Z]:[\\\\/]+[^\s"',}{)\]]+/gi) || [];
+    // Prevent 'https://' from matching as 's://' -> 'S:\'
+    const pathMatches = [];
+    const regex = /(?:^|[^a-zA-Z])([A-Z]:[\\\\/]+[^\s"',}{)\]]+)/gi;
+    let m;
+    while ((m = regex.exec(bodyStr)) !== null) {
+      pathMatches.push(m[1]);
+    }
     if (pathMatches.length === 0) return null;
 
     const rootCounts = {};
@@ -321,14 +366,7 @@ function detectProjectFromBody(bodyBuffer) {
 
 // ── BULLETPROOF DIRECTIVE INJECTOR ───────────────────────────────────────────
 function checkAndInjectDirectives(bodyBuffer, sessionId, keyIdx) {
-  // Auto-detect project for this session from body paths
-  if (sessionId && !sessionProjectTag.has(sessionId)) {
-    const detected = detectProjectFromBody(bodyBuffer);
-    if (detected) {
-      sessionProjectTag.set(sessionId, detected);
-      log(`${C.brightMagenta}🏷️  [${sessionId.slice(0,8)}...]${C.reset} -> project: ${C.bold}${detected.name}${C.reset} (${detected.root})`);
-    }
-  }
+  // sessionProjectTag is now populated earlier in getKeyIdxForSession
 
   const injections = readInjectionsSafe();
   if (!injections || Object.keys(injections).length === 0) return bodyBuffer;
@@ -373,14 +411,15 @@ function checkAndInjectDirectives(bodyBuffer, sessionId, keyIdx) {
   }
   if (!obj || !Array.isArray(obj.messages) || obj.messages.length === 0) return bodyBuffer;
 
+  // Force MAX REASONING EFFORT (High) for Grok-4.5
+  obj.reasoning_effort = "high";
+
   // ── CLEAN ANTI-COMPLETION: Strip attempt_completion from tools array ────────
   // Instead of hacking the SSE response stream (which broke JSON and caused
   // infinite error loops), we simply REMOVE the tool from the request.
   // If the model doesn't see the tool, it cannot call it. Clean and bulletproof.
   if (Array.isArray(obj.tools)) {
     const before = obj.tools.length;
-    const toolNames = obj.tools.map(t => t && t.function && t.function.name).filter(Boolean);
-    fs.writeFileSync('C:\\Users\\Admin\\Desktop\\tools_dump.txt', 'Tools provided by IDE: ' + toolNames.join(', '));
     
     obj.tools = obj.tools.filter(t => {
       const name = t && t.function && t.function.name;
@@ -433,27 +472,63 @@ function checkAndInjectDirectives(bodyBuffer, sessionId, keyIdx) {
   // Option B (below) injects a directive into the INCOMING prompt BEFORE it hits the API.
   // The model then generates a valid, non-empty tool call on its own.
   const historyStr = JSON.stringify(obj.messages.slice(-2)).toLowerCase();
-  const isCompletionAttempt = historyStr.includes('"name":"attempt_completion"') ||
-                               historyStr.includes('"attempt_completion"') ||
-                               historyStr.includes('attempt_completion for');
+  // ── COMPLETION DETECTION (verified against real Goose wire format from llm_request.*.jsonl) ──
+  // Goose wire format facts:
+  //   - Tool calls: assistant message has `tool_calls` array (standard OpenAI snake_case)
+  //   - Tool responses: separate message with `role: "tool"` + `tool_call_id`
+  //   - Completion: assistant message with ONLY `content` text, NO `tool_calls` array
+  //   - The words `toolCall`, `toolRequest`, `toolResponse` NEVER appear on the wire.
+  const lastMsg = obj.messages[obj.messages.length - 1];
+  const prevMsg = obj.messages.length >= 2 ? obj.messages[obj.messages.length - 2] : null;
 
+  // Is the last message a tool response? (role: "tool" in OpenAI format)
+  const lastMsgIsToolResponse = lastMsg && lastMsg.role === 'tool';
+
+  // Did the previous assistant message contain tool_calls?
+  const prevAssistantHasTools = prevMsg &&
+    prevMsg.role === 'assistant' &&
+    Array.isArray(prevMsg.tool_calls) &&
+    prevMsg.tool_calls.length > 0;
+
+  // Cline/Claude Code: explicit attempt_completion tool call in history
+  const isClineCompletion = historyStr.includes('"name":"attempt_completion"') ||
+                             historyStr.includes('"attempt_completion"') ||
+                             historyStr.includes('attempt_completion for');
+
+  // Goose: assistant's last turn was pure text (no tool_calls), and the current
+  // message is a new user prompt (not a tool response continuing the loop).
+  const isGooseCompletion = obj.messages.length >= 2 &&
+    lastMsg.role === 'user' &&
+    !lastMsgIsToolResponse &&
+    prevMsg && prevMsg.role === 'assistant' &&
+    !prevAssistantHasTools;
+
+  const isCompletionAttempt = isClineCompletion || isGooseCompletion;
+
+  // Goose uses `delegate` for subagents, not `use_subagents`
   const isUsingSubagents = historyStr.includes('"name":"use_subagents"') ||
+                           historyStr.includes('"name":"delegate"') ||
                            historyStr.includes('"use_subagents"') ||
                            historyStr.includes('use_subagents for');
 
   if (isCompletionAttempt && !isUsingSubagents) {
-    // PURE ASCII — no Cyrillic. Cyrillic in daemonDirective caused mojibake if the
-    // file was ever re-saved without UTF-8, corrupting the agent's instruction text.
     const daemonDirective = [
-      `[OVERSEER DAEMON MANDATE — DO NOT STOP — ${new Date().toISOString()}]`,
-      '1. Your attempt_completion was intercepted. The session MUST NOT end.',
-      '2. Your immediate next action: call execute_command with a real shell command.',
-      '   Example: git -C . log --oneline -5',
-      '3. Then open the project backlog/bible (jirnyak.md / BUILD_PLAYTEST_ISSUES.md / VISION_LOCKS.md / AGENTS.md)',
-      '   and implement the NEXT uncompleted item using read_file + replace_file_content.',
-      '4. CRITICAL ANTI-ABORT RULE: If ANY tool call returns an error or 0 results, DO NOT REPEAT IT!',
-      '   Immediately switch to a different tool so you NEVER trigger "Too many consecutive mistakes (3)".',
-      '5. Do NOT call attempt_completion again until the next concrete feature is committed.',
+      `[OVERSEER UNIVERSAL GOOSE DAEMON MANDATE — ${new Date().toISOString()}]`,
+      '1. YOUR SESSION COMPLETION WAS INTERCEPTED BY THE OVERSEER DAEMON. DO NOT STOP.',
+      '2. UNIVERSAL SELF-EVALUATION & REFLECTION:',
+      '   - Evaluate your current work against your project-specific rules and instructions.',
+      '   - IF tests fail, lints break, or core project rules are violated: POLISH AND FIX IT IMMEDIATELY.',
+      '   - IF current work passes all checks and rules: DO NOT over-polish. Proceed immediately to the NEXT task in the backlog.',
+      '3. GOOSE TOOL RULES (STRICT & EXCLUSIVE):',
+      '   - Use `shell` for terminal commands, testing, and linting.',
+      '   - Use `write` or `edit` for creating and modifying files.',
+      '   - Use `delegate(async: true)` to spawn subagents for broad codebase searches, reads, or audits.',
+      '   - Use `load` to retrieve subagent findings when ready.',
+      '   - Use `todo_write` to track remaining work.',
+      '4. CRITICAL ANTI-STALL RULE:',
+      '   - Never wait idle. While subagents run asynchronously, continue parallel work.',
+      '   - If any tool execution fails or errors out, NEVER repeat the identical failing invocation. Pivot to a different tool/command immediately.',
+      '5. CONTINUE WORKING NOW. Do not emit completion text until all project goals are verified.'
     ].join('\n');
     targetDirective = targetDirective ? (targetDirective + '\n' + daemonDirective) : daemonDirective;
   }
@@ -469,53 +544,31 @@ function checkAndInjectDirectives(bodyBuffer, sessionId, keyIdx) {
     return bodyBuffer;
   }
 
-  // Subagent Classifier
-  const systemText = (obj.system ? (typeof obj.system === 'string' ? obj.system : JSON.stringify(obj.system)) : '');
-  const firstMsgText = (obj.messages[0] ? JSON.stringify(obj.messages[0]) : '');
-  const combinedSystemStr = (systemText + ' ' + firstMsgText).toLowerCase();
-
-  const isSubagent = (
-    combinedSystemStr.includes('you are a subagent') ||
-    combinedSystemStr.includes('you are subagent') ||
-    combinedSystemStr.includes('role: subagent') ||
-    combinedSystemStr.includes('subagent type:') ||
-    combinedSystemStr.includes('subagent role:')
-  ) && !combinedSystemStr.includes('you are an interactive cli') && !combinedSystemStr.includes('you are an autonomous agent');
-
-  let directiveText = '';
-  if (isSubagent) {
-    directiveText = `\n[OVERSEER SUBAGENT DIRECTIVE VIA PROXY]: You are a SUBAGENT. Your only goal is to QUICKLY (1-2 turns) execute the narrow read/search task from the main agent. FORBIDDEN: writing .py scripts, spinning sleep loops, or taking on global layout/architecture. Use only built-in tools (view_file, grep_search). Return concise findings to the Main Agent and finish.\nAdditional Directive: ${targetDirective}\n`;
-  } else {
-    directiveText = `\n[OVERSEER MAIN AGENT DIRECTIVE VIA PROXY]: ${targetDirective}\n`;
-  }
-
   // NOTE: Context limit warning interceptor was removed.
   // claude-dev sends <explicit_instructions type="summarize_task"> natively when auto-condense
   // triggers. Replacing that message broke the summarize_task flow. Let it pass through unmodified.
 
-  const lastMsg = obj.messages[obj.messages.length - 1];
+  const injectionTargetMsg = obj.messages[obj.messages.length - 1];
 
   // Role-alternation safe injection
-  if (lastMsg && lastMsg.role === 'user') {
-    if (typeof lastMsg.content === 'string') {
-      lastMsg.content += directiveText;
-    } else if (Array.isArray(lastMsg.content)) {
-      lastMsg.content.push({ type: 'text', text: directiveText });
+  if (injectionTargetMsg && injectionTargetMsg.role === 'user') {
+    if (typeof injectionTargetMsg.content === 'string') {
+      injectionTargetMsg.content += `\n[OVERSEER MAIN AGENT DIRECTIVE VIA PROXY]: ${targetDirective}\n`;
+    } else if (Array.isArray(injectionTargetMsg.content)) {
+      injectionTargetMsg.content.push({ type: 'text', text: `\n[OVERSEER MAIN AGENT DIRECTIVE VIA PROXY]: ${targetDirective}\n` });
     }
   } else {
     obj.messages.push({
       role: 'user',
-      content: [{ type: 'text', text: directiveText }],
+      content: [{ type: 'text', text: `\n[OVERSEER MAIN AGENT DIRECTIVE VIA PROXY]: ${targetDirective}\n` }],
     });
   }
 
   sessionDeliveredDirectives.set(effectiveSid, dirHash);
   keyInjections[keyIdx]++;
   const newBodyStr = JSON.stringify(obj);
-  const tag = isSubagent
-    ? `${C.bgYellow}${C.bold} SUB ${C.reset}`
-    : (isCompletionAttempt ? `${C.bgMagenta}${C.bold} RE-WAKE ${C.reset}` : `${C.bgGreen}${C.bold} MAIN ${C.reset}`);
-  log(`💉 ${tag} -> [${sessionId ? sessionId.slice(0,8) : 'anon'}] "${C.cyan}${targetDirective.slice(0, 60)}${targetDirective.length > 60 ? '...' : ''}${C.reset}"`);
+  const tag = isCompletionAttempt ? `${C.bgMagenta}${C.bold} RE-WAKE ${C.reset}` : `${C.bgGreen}${C.bold} MAIN ${C.reset}`;
+  log(`💉 ${tag} -> [${sessionId ? sessionId.slice(0,8) : 'anon'}] "${C.cyan}${targetDirective.slice(0, 60).replace(/\n/g, ' ')}${targetDirective.length > 60 ? '...' : ''}${C.reset}"`);
   return Buffer.from(newBodyStr, 'utf8');
 }
 
@@ -693,9 +746,20 @@ function executeForward(req, res, body, cleanUrl, sessionId, retryCount = 0, rat
     return;
   }
 
-  const keyIdx = getKeyIdxForSession(sessionId);
+  const keyIdx = getKeyIdxForSession(sessionId, body);
 
   body = checkAndInjectDirectives(body, sessionId, keyIdx);
+
+  // Auto-Fallback: Rewrite any model request to cbcn/deepseek-v4-flash on tunnel.rue.onl
+  // NOTE: seekai.cc STRIPS tools from ALL OpenAI requests — DO NOT USE for agentic work.
+  try {
+    let bodyStr = Buffer.isBuffer(body) ? body.toString('utf8') : String(body);
+    if (bodyStr.includes('"model"')) {
+      bodyStr = bodyStr.replace(/"model"\s*:\s*"[^"]+"/g, '"model":"cbcn/deepseek-v4-flash"');
+      body = Buffer.from(bodyStr, 'utf8');
+      log(`🔄 ${C.brightYellow}AUTOMATIC MODEL REWRITE:${C.reset} -> cbcn/deepseek-v4-flash`);
+    }
+  } catch (e) {}
 
   // v6.2 Cached Pre-Emptive Proactive Pruning
   if (prunePass === 0 && body.length > 500000) {
@@ -720,7 +784,7 @@ function executeForward(req, res, body, cleanUrl, sessionId, retryCount = 0, rat
 
   const upHeaders = {};
   for (const [hk, hv] of Object.entries(req.headers)) {
-    if (['host','content-length','authorization','x-api-key'].includes(hk)) continue;
+    if (['host','content-length','authorization','x-api-key','accept-encoding'].includes(hk)) continue;
     upHeaders[hk] = hv;
   }
   upHeaders['host']           = new URL(UPSTREAM).hostname;

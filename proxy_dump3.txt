@@ -1,0 +1,42 @@
+upRes.on('data', chunk => errParts.push(chunk));
+    upRes.on('end', () => {
+      const buf = Buffer.concat(errParts);
+      const decode = upRes.headers['content-encoding'] === 'gzip'
+        ? (b, cb) => zlib.gunzip(b, (err, r) => cb(err ? b.toString('utf8') : r.toString('utf8')))
+        : (b, cb) => cb(b.toString('utf8'));
+      decode(buf, errText => {
+        log(`💥 ${C.red}HTTP ${sc}:${C.reset} ${errText.slice(0, 200)}`);
+        if (!res.headersSent) {
+          const outBuf = Buffer.from(errText, 'utf8');
+          const fwdHeaders = { ...upRes.headers };
+          delete fwdHeaders['content-encoding'];
+          fwdHeaders['content-length'] = String(outBuf.length);
+          res.writeHead(sc, fwdHeaders);
+          res.end(outBuf);
+        }
+      });
+    });
+  });
+
+  upReq.on('socket', (sock) => {
+    if (sock.connecting) {
+      sock.setTimeout(15000);
+      sock.once('connect', () => sock.setTimeout(90000));
+    } else {
+      sock.setTimeout(90000);
+    }
+  });
+
+  upReq.on('timeout', () => {
+    log(`⏱ socket timeout → destroy & retry`);
+    upReq.destroy(new Error('socket timeout'));
+  });
+
+  upReq.on('error', err => {
+    if (/ECONNRESET|ETIMEDOUT|EPIPE|ENETUNREACH|EHOSTUNREACH|socket timeout|ECONNREFUSED/i.test(err.message || '')) {
+      noteNetFailure(err.message);
+    }
+    const wait = netDelay(retryCount);
+    log(`✗ upstream error (K#${keyNum}): ${err.message} → retry in ${wait}ms`);
+    setTimeout(() => {
+      if (res.writableEnded || res.destroyed) 

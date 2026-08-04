@@ -1,0 +1,31 @@
+Cyan}${req.method} ${cleanUrl}${C.reset} │ ${C.bold}K#${keyNum}${C.reset}${retryLabel}${rateLabel} │ ${C.dim}${body.length}B${C.reset}`);
+
+  const upUrl = new URL(cleanUrl, UPSTREAM);
+  const upReq = https.request({
+    hostname: upUrl.hostname,
+    port:     443,
+    path:     upUrl.pathname + (upUrl.search || ''),
+    method:   req.method,
+    headers:  upHeaders,
+    agent:    httpsAgent,
+  }, (upRes) => {
+    const sc = upRes.statusCode;
+
+    // ── 401 / 403 DEAD KEY ───────────────────────────────────────────────────
+    if (sc === 401 || sc === 403) {
+      upRes.resume();
+      log(`${C.bgRed}${C.bold} REJECTED ${C.reset} K#${keyNum} → HTTP ${sc}. Disabling.`);
+      keyDisabled[keyIdx] = true;
+      if (sessionId) sessionKeyMap.delete(sessionId);
+      executeForward(req, res, body, cleanUrl, sessionId, retryCount, rateLimitRetry, prunePass, deadKeyAttempts + 1);
+      return;
+    }
+
+    // ── 413 PAYLOAD TOO LARGE ────────────────────────────────────────────────
+    if (sc === 413) {
+      upRes.resume();
+      keyAuto413Trims[keyIdx]++;
+      const nextPass = prunePass + 1;
+      if (nextPass > MAX_PRUNE_PASSES) {
+        log(`${C.brightRed}❌ 413 after ${MAX_PRUNE_PASSES}
+

@@ -1,0 +1,49 @@
+res.writeHead(statusCode, {
+      'content-type': 'application/json',
+      'content-length': String(Buffer.byteLength(body)),
+    });
+    res.end(body);
+  } catch {}
+}
+
+// ── FORWARD REQUEST ───────────────────────────────────────────────────────────
+function executeForward(req, res, body, cleanUrl, sessionId, retryCount = 0, rateLimitRetry = 0, prunePass = 0, deadKeyAttempts = 0) {
+  // ── RETRY CAPS ─────────────────────────────────────────────────────────────
+  if (retryCount > MAX_NET_RETRIES) {
+    log(`${C.brightRed}❌ MAX NET RETRIES (${MAX_NET_RETRIES}) exceeded. Giving up.${C.reset}`);
+    sendErrorToClient(res, 502, `Proxy: upstream unreachable after ${MAX_NET_RETRIES} retries`);
+    return;
+  }
+  // 429 has NO retry cap — infinite wait-and-retry is the core feature of this proxy.
+  if (deadKeyAttempts >= GROK_KEYS.length) {
+    log(`${C.brightRed}❌ ALL ${GROK_KEYS.length} KEYS REJECTED (401/403). No valid keys left.${C.reset}`);
+    sendErrorToClient(res, 401, `Proxy: all ${GROK_KEYS.length} API keys rejected`);
+    return;
+  }
+
+  const keyIdx = getKeyIdxForSession(sessionId);
+
+  body = checkAndInjectDirectives(body, sessionId, keyIdx);
+
+  const rawKey = GROK_KEYS[keyIdx] || '';
+  const key = rawKey.trim().replace(/[^\x20-\x7E]/g, '');
+  const keyNum = keyIdx + 1;
+
+  if (!key || /[^\x20-\x7E]/.test(rawKey) || rawKey.includes('INSERT') || rawKey.includes('YOUR')) {
+    log(`${C.brightRed}❌ KEY #${keyNum} is a placeholder or invalid!${C.reset}`);
+    sendErrorToClient(res, 500, `Key #${keyNum} is invalid or a placeholder`);
+    return;
+  }
+
+  keyReqCounts[keyIdx]++;
+
+  const upHeaders = {};
+  for (const [hk, hv] of Object.entries(req.headers)) {
+    if (['host','content-length','authorization','x-api-key'].includes(hk)) continue;
+    upHeaders[hk] = hv;
+  }
+  upHeaders['host']           = new URL(UPSTREAM).hostname;
+  upHeaders['content-length'] = String(body.length);
+  upHeaders['authorization']  = `Bearer ${key}`;
+  upHeaders['x-api-key']      = key;
+  up

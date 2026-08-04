@@ -1,0 +1,40 @@
+9:  *  - Strict User-Protected 413 Trimmer
+14:  *  - FIX: 413 handler fall-through now sends proper error to client instead of hanging
+22:  *  - FIX: 413 prune pass capped at MAX_PRUNE_PASSES (3)
+50: const MAX_PRUNE_PASSES   = 5;    // 413 prune pass cap (5 passes should reduce any payload)
+84:   ? process.env.GROK_KEYS.split(',').map(k => k.trim()).filter(Boolean)
+102:         GROK_KEYS = arr.map(k => String(k).trim()).filter(Boolean);
+110:       const lines = raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+129:   keyAuto413Trims  = padArray(keyAuto413Trims, len, 0);
+156: let keyAuto413Trims      = new Array(GROK_KEYS.length).fill(0);
+452: // ── RECURSIVE UNIVERSAL 413 CONTEXT TRIMMER ────────────────────────────────
+453: // v6.1: trimAnyValue recursively traverses nested tool_result objects, string
+455: // Root cause of "413 Payload too large and could not be reduced" was tool_result
+457: function trimAnyValue(val, maxLen, stats) {
+462:       return val.slice(0, 100) + '\n[... Proxy 413 TRIM: truncated ' + (val.length - maxLen) + ' chars ...]\n' + val.slice(-100);
+467:     return val.map(item => trimAnyValue(item, maxLen, stats));
+472:       return { type: 'text', text: '[Proxy: base64 image removed for 413]' };
+476:       newObj[k] = trimAnyValue(v, maxLen, stats);
+483: function pruneMiddleFor413(bodyBuffer, pass = 1) {
+497:       m.content = trimAnyValue(m.content, maxResultLen, stats);
+503:     log(`✂️ ${C.yellow}413 TRIM pass ${pass}:${C.reset} ${stats.truncatedBlocks} text/tool blocks, ${stats.truncatedImages} images. ${bodyBuffer.length}B → ${newBodyStr.length}B`);
+506:     log(`${C.red}⚠ Prune 413 failed: ${err.message}${C.reset}`);
+546: function executeForward(req, res, body, cleanUrl, sessionId, retryCount = 0, rateLimitRetry = 0, prunePass = 0, deadKeyAttempts = 0) {
+565:   const key = rawKey.trim().replace(/[^\x20-\x7E]/g, '');
+608:       executeForward(req, res, body, cleanUrl, sessionId, retryCount, rateLimitRetry, prunePass, deadKeyAttempts + 1);
+612:     // ── 413 PAYLOAD TOO LARGE ────────────────────────────────────────────────
+613:     if (sc === 413) {
+615:       keyAuto413Trims[keyIdx]++;
+616:       const nextPass = prunePass + 1;
+618:         log(`${C.brightRed}❌ 413 after ${MAX_PRUNE_PASSES} trim passes. Payload irreducible.${C.reset}`);
+619:         sendErrorToClient(res, 413, `Payload too large after ${MAX_PRUNE_PASSES} trim passes`);
+622:       log(`✂️ HTTP 413 → trim pass ${nextPass}...`);
+623:       const prunedBody = pruneMiddleFor413(body, nextPass);
+624:       if (prunedBody && prunedBody.length < body.length) {
+625:         executeForward(req, res, prunedBody, cleanUrl, sessionId, retryCount + 1, rateLimitRetry, nextPass, deadKeyAttempts);
+629:       log(`${C.brightRed}❌ 413 trim yielded no reduction. Forwarding error to client.${C.reset}`);
+630:       sendErrorToClient(res, 413, 'Payload too large and could not be reduced');
+641:         executeForward(req, res, body, cleanUrl, sessionId, retryCount, rateLimitRetry + 1, prunePass, deadKeyAttempts);
+653:         executeForward(req, res, body, cleanUrl, sessionId, retryCount + 1, rateLimitRetry, prunePass, deadKeyAttempts);
+711:       executeForward(req, res, body, cleanUrl, sessionId, retryCount + 1, rateLimitRetry, prunePass, deadKeyAttempts);
+762:   const input = line.trim();
