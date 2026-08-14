@@ -1,8 +1,20 @@
-# 🪐 GROK OVERSEER v6.0 — ARCHITECT DAEMON & PROXY CONTROL SYSTEM
+<div align="center">
 
 ![Grok Overseer Banner](grok_overseer_banner.jpg)
 
+# 🪐 GROK OVERSEER v6.0 — Architect Daemon & Proxy Control System
+
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Proxy-teal.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![MitM Interceptor](https://img.shields.io/badge/MitM-Completion%20Interceptor-purple.svg?style=for-the-badge)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+
 > **Continuous Autonomous AI Agent Steering, MitM Completion Interception & Real-time Telemetry Control System.**
+
+[📖 Overview](#-overview-обзор) &nbsp;·&nbsp; [🚀 Quick Start](#-quick-start--architecture-абстракция-и-структура) &nbsp;·&nbsp; [⚙️ Setup](#-installation--setup-руководство-по-установке) &nbsp;·&nbsp; [⚖️ Laws](#-overseer-rules-свод-законов-для-агента-архитектора)
+
+</div>
 
 ---
 
