@@ -1,0 +1,13 @@
+# Grok Proxy Overseer Neural WAF
+> Fastify SSE streaming token meter and circuit breaker proxy
+
+- Project: marko1olo/grok-proxy-overseer
+- Authors: Adolf Petushkov (@marko1olo) & Jirnyak (@Jirnyak)
+- Ecosystem: Open Source Engineering Syndicate
+- License: Open Source (MIT / People's License)
+
+## Core Technical Specs
+Fastify SSE streaming token meter and circuit breaker proxy
+
+## Full Documentation
+For complete mathematical models, API endpoints, algorithms, and architecture, see llms-full.txt or README.md.
