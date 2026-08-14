@@ -1,0 +1,85 @@
+# 🔒 Security Policy — marko1olo/grok-proxy-overseer
+
+> **Vulnerability Disclosure, Threat Modeling & Defensive Architecture**  
+> Maintained by the **Жирняк & Адольф Петушков** Engineering Syndicate  
+> Project Scope: `Grok Proxy Overseer LLM Model Proxy Controller`
+
+---
+
+## 📑 Table of Contents
+1. [🛡️ Supported Versions & Patch Lifecycle](#️-1-supported-versions--patch-lifecycle)
+2. [🎯 Domain Threat Model & Attack Surfaces](#-2-domain-threat-model--attack-surfaces)
+3. [🚨 Vulnerability Reporting & Disclosure Protocol](#-3-vulnerability-reporting--disclosure-protocol)
+4. [⏱️ Response SLAs & Remediation Timelines](#️-4-response-slas--remediation-timelines)
+5. [💎 Defensive Engineering Architecture](#-5-defensive-engineering-architecture)
+6. [🔍 Dependency Auditing & Supply Chain Safety](#-6-dependency-auditing--supply-chain-safety)
+7. [👥 Syndicate Security Contacts](#-7-syndicate-security-contacts)
+
+---
+
+## 🛡️ 1. Supported Versions & Patch Lifecycle
+
+We actively maintain and provide critical security updates for the following release lines of **marko1olo/grok-proxy-overseer**:
+
+| Branch / Release | Supported | Patch Cadence | Notes |
+| :--- | :--- | :--- | :--- |
+| `master` (Head) | ✅ Yes | Immediate Hotfix | Primary development target; fully patched. |
+| Latest Tagged Release | ✅ Yes | Within 48 Hours | Critical vulnerabilities backported. |
+| Historical / Deprecated | ❌ No | None | Please rebase or upgrade to current branch. |
+
+---
+
+## 🎯 2. Domain Threat Model & Attack Surfaces
+
+Security engineering in marko1olo/grok-proxy-overseer is guided by the following domain-specific threat vector analyses:
+
+### 1. API Key Leakage
+* **Description**: Uncaught proxy exceptions dumping authorization headers into response bodies.
+* **Impact Rating**: HIGH / CRITICAL
+* **Mitigation Strategy**: Strict schema validation, boundary fuzz testing, and automated static security analysis.
+
+---
+
+## 🚨 3. Vulnerability Reporting & Disclosure Protocol
+
+If you discover a security flaw or exploit vector in **marko1olo/grok-proxy-overseer**, do **NOT** post it publicly in open issues or discussions.
+
+### 3.1 Submission Workflow
+1. Navigate to the **Security** tab on GitHub -> **Advisories** -> **Report a vulnerability**.
+2. Alternatively, open a cryptographically signed advisory to the syndicate maintainers.
+3. Provide the following details:
+   * Subsystem and affected source files / line numbers.
+   * Step-by-step minimal reproduction script or payload.
+   * Assessment of potential exploit impact (memory corruption, data exfiltration, DoS).
+
+---
+
+## ⏱️ 4. Response SLAs & Remediation Timelines
+
+* **Initial Triage & Acknowledgment**: Within **24–48 hours**.
+* **Vulnerability Verification & Reproducer**: Within **3 business days**.
+* **Remediation Patch Development**: Within **7 business days**.
+* **Public Coordinated Disclosure**: Published simultaneously with the verified patch release.
+
+---
+
+## 💎 5. Defensive Engineering Architecture
+
+All code running in this repository must adhere to defensive coding invariants:
+* **Memory Bounds Checking**: All slice offsets, vector indices, and WebAssembly linear memory allocations are strictly bounded.
+* **Input Sanitization**: External network payloads, uploaded files, and deserialized states must be validated before ingestion.
+* **Cryptographic Rigor**: Sensitive tokens, cryptographic keys, and hashes must use standard constant-time comparison algorithms to eliminate timing side-channels.
+
+---
+
+## 🔍 6. Dependency Auditing & Supply Chain Safety
+
+1. Automated daily vulnerability scans on all dependencies via `npm audit` / `cargo audit` / `pip-audit`.
+2. All lockfiles are committed and pinned to immutable cryptographic hashes.
+3. Third-party vendor updates require manual review of code diffs to prevent supply chain poisoning.
+
+---
+
+## 👥 7. Syndicate Security Contacts
+
+Developed, audited, and maintained under the security direction of **Жирняк** & **Адольф Петушков**.
