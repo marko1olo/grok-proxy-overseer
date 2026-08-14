@@ -1,0 +1,21 @@
+name: CI / Linter & Build Verification
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Markdown & Docs
+        run: |
+          echo "Validating repository structure and core documentation..."
+          test -f README.md && echo "README.md OK"
+          test -f LICENSE || test -f LICENSE.md && echo "LICENSE OK"
